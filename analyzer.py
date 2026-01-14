@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import csv
 from datetime import datetime
@@ -7,6 +8,10 @@ from jobspy import scrape_jobs
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from datetime import date
+from pylatex import Document, Section, Command, Package, NoEscape, Itemize
+from pylatex.base_classes import Environment, CommandBase, Arguments
+from pylatex.utils import bold, escape_latex
+import time
 
 # General Overview:
 
@@ -384,9 +389,145 @@ def add_work_experience():
             return
         
         role = input("Enter your role at the company: ")
-        start_date = input("Enter the start date of the work experience (YYYY-MM-DD): ")
-        end_date = input("Enter the end date of the work experience (YYYY-MM-DD): ")
-        description = input("Enter a brief description of your responsibilities and achievements: ")
+        start_year = input("Enter the year you started working in this position (YYYY): ")
+        start_month = input("Enter the month you started working in this position (MM): ")
+        end_year = input("Enter the year you ended working in this position (YYYY): ")
+        end_month = input("Enter the month you ended working in this position (MM): ")
+        
+        long_short = input("Would you like to input a shorter description, or a longer one? (Type S for short, L for long): ")
+        if long_short.upper() == "S":
+            description_short = input("Enter a brief description of your responsibilities and achievements: ")
+            bullet1_long = ""
+            bullet2_long = ""
+            bullet3_long = ""
+        
+        elif long_short.upper() == "L":
+            description_short = ""
+            method = input("You will now input three bullet points that describe your responsibilities and achievements. Would you like to input the bullet points yourself, or have an AI help you generate them? (Type M for manual, A for AI): ")
+            
+            if method.upper() == "A":
+                print("Loading assistant...")
+                generate_bullets_prompt = """
+                
+                You are an expert career coach. A client has provided you with a brief description of their responsibilities and achievements at a previous job.
+                Based off of this description, generate three concise bullet points that effectively highlight their key contributions and accomplishments in that role.
+                Make sure to use action verbs and quantify achievements where possible.
+                
+                Brief Description: {description_short}
+                
+                Make sure to respond in the following format. If you do not respond in this exact format, the program will not be able to parse your response:
+                
+                Bullet Point 1: ...
+                Bullet Point 2: ...
+                Bullet Point 3: ...
+                
+                """
+
+                refine_bullets_prompt = """
+                
+                You are an expert career coach. A client has provided you with a brief description of their responsibilities and achievements at a previous job.
+                In your previous correspondence with the client, you generated three bullet points based off of this description that best highlight their key contributions and accomplishments in that role.
+                
+                The client has now provided the following feedback based off of the bullet points you generated: {user_feedback}
+                
+                Your original bullet points are as follows: {original_bullets}
+                
+                The client's initial description of the job is as follows: {description_short}
+                
+                Please refine and improve the original bullet points based off of the client's feedback, ensuring that they effectively highlight the client's key contributions and accomplishments in that role.
+                
+                Make sure to respond in the following format. If you do not respond in this exact format, the program will not be able to parse your response:
+                
+                Bullet Point 1: ...
+                Bullet Point 2: ...
+                Bullet Point 3: ...
+                
+                """
+
+                showReasoning = False
+
+                print("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N")
+                while True:
+                    selection = input("Selection: ")
+                    if selection == "Y":
+                        showReasoning = True
+                        break
+                    elif selection == "N":
+                        print("Thinking...")
+                        break
+                    print("Invalid selection, please type Y or N")
+                
+                
+                t1 = time.time()
+                generative_model = ChatOllama(model="deepseek-r1", streaming=True, reasoning=True)
+                print(f"Model init took: {time.time() - t1:.2f}s")
+                
+                t2 = time.time()
+                prompt = ChatPromptTemplate.from_template(generate_bullets_prompt)
+                chain = prompt | generative_model
+                print(f"Chain creation took: {time.time() - t2:.2f}s")
+                
+                user_desc = input("Please write a bit about the job you did, focusing on your responsibilities and achievements. The AI will take this answer and help streamline it.")
+                
+                inputs = {"description_short": user_desc}
+                
+                print("Waiting for first token...")
+                t3 = time.time()
+                
+                print("Initializing Response (May take a bit to get started)...\n")
+                first_token_received = False
+                
+                summary_text = ""
+                
+                for chunk in chain.stream(inputs):
+                    if not first_token_received:
+                        print(f"First token received after: {time.time() - t3:.2f}s")
+                        first_token_received = True
+
+                    # Check for reasoning (thinking) tokens
+                    # These are usually in additional_kwargs when reasoning=True
+                    reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+                    if reasoning and showReasoning:
+                        print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+                    
+                    # Check for the actual answer tokens
+                    content = chunk.content
+                    if content:
+                        print(content, end="", flush=True)
+                        summary_text += content
+                
+                followup_prompt = ChatPromptTemplate.from_template(refine_bullets_prompt)
+                followup_chain = followup_prompt | generative_model
+                
+                while True: # fix formatting here, we want it to match previous messages
+                    user_input = input("\nAsk a followup question (or type 'exit' to quit) >>> ").strip()
+                    
+                    if user_input.lower() in ['exit', 'quit', 'q', '']:
+                        print("Exiting followup mode. Goodbye!")
+                        break
+                    
+                    followup_inputs = {
+                        "user_feedback": user_input,
+                        "original_bullets": summary_text,
+                        "description_short": user_desc
+                    }
+                    
+                    for chunk in followup_chain.stream(followup_inputs):
+                        # Check for reasoning (thinking) tokens
+                        reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+                        if reasoning and showReasoning:
+                            print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+                        
+                        # Check for the actual answer tokens
+                        content = chunk.content
+                        if content:
+                            print(content, end="", flush=True)
+                
+            elif method.upper() == "M":
+                bullet1_long = input("Give a quick description of your responsibilities and achievements (1/3): ")
+                bullet2_long = input("Give a quick description of your responsibilities and achievements (2/3): ")
+                bullet3_long = input("Give a quick description of your responsibilities and achievements (3/3): ")
+        
         
         if company.strip() == "" or role.strip() == "" or start_date.strip() == "" or end_date.strip() == "" or description.strip() == "":
             print("Invalid input. None of the fields can be empty.")
@@ -691,14 +832,27 @@ def init_check(): # check to make sure all necessary folders and files are made
             "projects_bank.csv",
             "skills_bank.csv",
             "work_experience_bank.csv",
+            "user_info.json"
         ],
     }
 
-    headers = {
+    csv_headers = {
         "coursework_bank.csv": ["course_id", "course_name", "institution", "year", "semester", "grade", "description"],
-        "projects_bank.csv": ["project_name", "description", "start_date", "end_date", "link1", "link2"],
+        "projects_bank.csv": ["project_name", "description", "start_month", "start_year", "end_month", "end_year", "link1", "link2"],
         "skills_bank.csv": ["skill_name", "level"],
-        "work_experience_bank.csv": ["company", "role", "start_date", "end_date", "description"],
+        "work_experience_bank.csv": [
+            "company", 
+            "role", 
+            "start_month", 
+            "start_year", 
+            "end_month", 
+            "end_year", 
+            "long_short", 
+            "description_short", 
+            "bullet1_long", 
+            "bullet2_long", 
+            "bullet3_long"
+        ],
         "job_bank.csv": [
                 "id",
                 "site",
@@ -737,6 +891,18 @@ def init_check(): # check to make sure all necessary folders and files are made
             ]
     }
 
+    json_headers = {
+        "user_info.json": [
+            "full_name",
+            "email",
+            "phone_number",
+            "linkedin_url",
+            "github_url",
+            "portfolio_url",
+            "address"
+        ]
+    }
+
     for folder, contents in structure.items():
         folder_path = base_dir / folder
 
@@ -750,7 +916,7 @@ def init_check(): # check to make sure all necessary folders and files are made
             # CSV file
             if item_path.suffix == ".csv":
                 
-                expected_headers = headers.get(item, [])
+                expected_headers = csv_headers.get(item, [])
                 
                 if not item_path.exists(): # if the .csv isnt there, create a new one
                     with item_path.open("w", newline="", encoding="utf-8") as f:
@@ -790,6 +956,44 @@ def init_check(): # check to make sure all necessary folders and files are made
                             writer.writerow(expected_headers)
                     # result == 3 does nothing
 
+            elif item_path.suffix == ".json":
+                expected_headers = json_headers.get(item, [])
+                
+                if not item_path.exists():
+                    with item_path.open("w", encoding="utf-8") as f:
+                        json.dump({key: "" for key in expected_headers}, f, indent=4)
+                    print(f"Created file with headers: {item_path}")
+                
+                with item_path.open("r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+                    existing_headers = list(existing_data.keys())
+                
+                if existing_headers != expected_headers:
+                    healthy = False
+                    print(
+                        f"⚠️  Header mismatch in {item_path} ⚠️\n"
+                        f"   Expected: {expected_headers}\n"
+                        f"   Found:    {existing_headers}\n"
+                        f"   !!! The file may be corrupted !!!\n"
+                    )
+
+                    print("How would you like to proceed?")
+                    print("1. Load from backup")
+                    print("2. Remake file")
+                    print("3. Proceed without doing anything (not advisable)\n")
+                    while True:
+                        result = input("Selection: ")
+                        if result in {'1', '2', '3'}:
+                            break
+                        print("Invalid input. Please type 1 to load from a backup, 2 to remake the file, or 3 to proceed without doing anything")
+
+                    if result == '1':
+                        load_backup(item_path)
+                    elif result == '2':
+                        Path(item_path).unlink()
+                        with item_path.open("w", encoding="utf-8") as f:
+                            json.dump({key: "" for key in expected_headers}, f, indent=4)
+                    # result == 3 does nothing
                     
             # Directory
             else:
@@ -857,7 +1061,188 @@ def load_backup(item_path: Path):
     
     print(f"Replaced file {item_path.name} with its backup from {most_recent}")
     
+class JobLong(Environment):
+    """Custom environment for job entries with bullet points"""
+    _latex_name = 'joblong'
+    packages = []
+    
+    def __init__(self, job_title, date_range):
+        super().__init__(arguments=Arguments(job_title, date_range))
 
+class JobShort(Environment):
+    """Custom environment for short job entries"""
+    _latex_name = 'jobshort'
+    packages = []
+    
+    def __init__(self, job_title, date_range):
+        super().__init__(arguments=Arguments(job_title, date_range))
+
+class ProjectEntry(Environment):
+    """Custom tabularx environment for project entries"""
+    _latex_name = 'tabularx'
+    packages = []
+    
+    def __init__(self):
+        super().__init__(arguments=Arguments(NoEscape(r'\linewidth'), NoEscape('@{}l r@{}')))
+
+def create_resume(work_experience, projects, skills, coursework, education):
+    """
+    Format:
+    
+    work_experience: list of dicts with keys: company, role, start_date, end_date, type (long or short), description based off of type
+    projects: list of dicts with keys: project_name, description, start_date, end_date, link1, link2
+    skills: dict of dicts with keys: skill_name, level. Looks like {category 1: [{skill_name: , level: }, ...], category 2: [...], ...}
+    coursework: list of dicts with keys: course_name, institution, year, semester, grade, description
+    education: list of dicts with keys: institution, degree, field_of_study, start_date, end_date, description. Sorted by end_date descending
+    
+    """
+    
+    PROJECT_ROOT = Path(__file__).parent
+
+    # Path to Stored Info/user_info.json
+    USER_INFO_PATH = PROJECT_ROOT / "Stored Info" / "user_info.json"
+
+    # Read JSON
+    with USER_INFO_PATH.open("r", encoding="utf-8") as f:
+        user_info = json.load(f)
+
+    # Extract values
+    name = user_info["name"]
+    github = user_info["github"]
+    linkedin = user_info["linkedin"]
+    email = user_info["email"]
+    phone = user_info["phone_number"]
+    
+    # Document setup with geometry
+    geometry_options = {"margin": "0.9in"}
+    doc = Document(documentclass='article', 
+                   document_options=['a4paper', '12pt'],
+                   geometry_options=geometry_options)
+    
+    # Add packages
+    doc.packages.append(Package('url'))
+    doc.packages.append(Package('parskip'))
+    doc.packages.append(Package('color'))
+    doc.packages.append(Package('graphicx'))
+    doc.packages.append(Package('xcolor', options=['usenames', 'dvipsnames']))
+    doc.packages.append(Package('tabularx'))
+    doc.packages.append(Package('enumitem'))
+    doc.packages.append(Package('supertabular'))
+    doc.packages.append(Package('titlesec'))
+    doc.packages.append(Package('multicol'))
+    doc.packages.append(Package('multirow'))
+    doc.packages.append(Package('hyperref', options=['unicode', 'draft=false']))
+    doc.packages.append(Package('fontawesome5'))
+    
+    # Add preamble configurations
+    doc.preamble.append(Command('definecolor', arguments=['linkcolour', 'rgb', '0,0.2,0.6']))
+    doc.preamble.append(Command('hypersetup', 'colorlinks,breaklinks,urlcolor=linkcolour,linkcolor=linkcolour'))
+    
+    # Custom column type
+    doc.preamble.append(NoEscape(r'\newcolumntype{C}{>{\centering\arraybackslash}X}'))
+    
+    # Custom section formatting
+    doc.preamble.append(NoEscape(r'\titleformat{\section}{\Large\scshape\raggedright}{}{0em}{}[\titlerule]'))
+    doc.preamble.append(NoEscape(r'\titlespacing{\section}{0pt}{10pt}{10pt}'))
+    
+    # Define custom environments
+    doc.preamble.append(NoEscape(r'''
+\newenvironment{jobshort}[2]
+    {
+    \begin{tabularx}{\linewidth}{@{}l X r@{}}
+    \textbf{#1} & \hfill &  #2 \\[3.75pt]
+    \end{tabularx}
+    }
+    {
+    }
+
+\newenvironment{joblong}[2]
+    {
+    \begin{tabularx}{\linewidth}{@{}l X r@{}}
+    \textbf{#1} & \hfill &  #2 \\[3.75pt]
+    \end{tabularx}
+    \begin{minipage}[t]{\linewidth}
+    \begin{itemize}[nosep,after=\strut, leftmargin=1em, itemsep=3pt,label=--]
+    }
+    {
+    \end{itemize}
+    \end{minipage}    
+    }
+'''))
+    
+    # Set page style
+    doc.preamble.append(Command('pagestyle', 'empty'))
+    
+    # Header with name and contact info
+    doc.append(NoEscape(rf'''
+\begin{{tabularx}}{{\linewidth}}{{@{{}} C @{{}}}}
+\Huge{{{escape_latex(name)}}} \\[7.5pt]
+\raisebox{{-0.05\height}}\faLinkedin\ {escape_latex(linkedin)} \ $|$ \ 
+\raisebox{{-0.05\height}}\faEnvelope \ {escape_latex(email)} \ $|$ \ 
+\raisebox{{-0.05\height}}\faMobile \ {escape_latex(phone)} \ $|$ \
+\raisebox{{-0.05\height}}\faGithub \ {escape_latex(github)}\\
+\end{{tabularx}}
+'''))
+    
+    # Work Experience Section
+    if work_experience != []:
+        with doc.create(Section('Work Experience')):
+            for job_dict in work_experience:
+                if job_dict["type"] == "long":
+                    with doc.create(JobLong(f"{job_dict['role']}, {job_dict['company']}", f"{job_dict['start_date']} -- {job_dict['end_date']}")):
+                        for item in job_dict['description']:
+                            doc.append(NoEscape(rf'\item {escape_latex(item)}'))
+                else:
+                    with doc.create(JobShort(f"{job_dict['role']}, {job_dict['company']}", f"{job_dict['start_date']} -- {job_dict['end_date']}")):
+                        doc.append(NoEscape(rf'\noindent {escape_latex(job_dict["description"])}'))
+                doc.append(NoEscape('\n'))
+    
+    # Projects Section
+    if projects != []:
+        with doc.create(Section('Projects')):
+            doc.append(Command('small'))
+            for project_dict in projects:
+                with doc.create(ProjectEntry()):
+                    doc.append(NoEscape('\n'))
+                    doc.append(NoEscape(rf'\textbf{{{escape_latex(project_dict["project_name"])}}} & \hfill \textbf{{{escape_latex(project_dict["start_date"])} -- {escape_latex(project_dict["end_date"])}}} \\[3.75pt]'))
+                    doc.append(NoEscape(rf'\multicolumn{{2}}{{@{{}}X@{{}}}}{{{escape_latex(project_dict["description"])}}} \\'))
+                    doc.append(NoEscape('\n'))
+                doc.append(NoEscape('\n'))
+        
+    # Education Section
+    with doc.create(Section('Education')):
+        for degree in education:
+            doc.append(NoEscape(r'\noindent'))
+            doc.append(NoEscape(rf'\textbf{{{escape_latex(degree["institution"])}}} \hfill {escape_latex(degree["start_date"])} -- {escape_latex(degree["end_date"])}'))
+            doc.append(NoEscape('\n\n'))
+            doc.append(NoEscape(r'\vspace{-2.5mm}'))
+            doc.append(NoEscape('\n\n'))
+            doc.append(NoEscape(r'\noindent'))
+            doc.append(NoEscape(rf'\textbf{{Degree:}} {escape_latex(degree["degree"])} in {escape_latex(degree["field_of_study"])}'))
+            doc.append(NoEscape('\n'))
+            doc.append(NoEscape(r'\hfill'))
+            doc.append(NoEscape('\n'))
+            doc.append(NoEscape(rf'\textbf{{GPA: {escape_latex(degree["gpa"])}}} \\[2pt]'))
+            if degree.get("minor", ""):
+                doc.append(NoEscape(rf'\textbf{{Minor:}} {escape_latex(degree["minor"])}'))
+    
+    # Skills Section
+    if skills != {}:
+        with doc.create(Section('Skills')):
+            with doc.create(Itemize(options=NoEscape(r'itemsep 1pt, parskip 1pt, parsep 0pt'))) as itemize:
+                for skill_category in skills:
+                    itemize.add_item(NoEscape(rf'\textbf{{{escape_latex(skill_category)}}}: {escape_latex(", ".join([skill["skill_name"] for skill in skills[skill_category]]))}'))
+    
+    if coursework != []:
+        with doc.create(Section('Relevant Coursework')):
+            with doc.create(Itemize(options=NoEscape(r'itemsep 1pt, parskip 1pt, parsep 0pt'))) as itemize:
+                for course_dict in coursework:
+                    itemize.add_item(NoEscape(rf'\textbf{{{escape_latex(course_dict["course_name"])}}} ({escape_latex(course_dict["institution"])}, {escape_latex(course_dict["year"])} {escape_latex(course_dict["semester"])}, Recieved a {escape_latex(course_dict["grade"])}): {escape_latex(course_dict["description"])}'))
+    
+    # Footer
+    doc.append(NoEscape(r'\center{\small\textbf{References Available Upon Request}}'))
+    
+    return doc
 
 if __name__ == "__main__":
     init_check()
