@@ -12,6 +12,7 @@ from pylatex import Document, Section, Command, Package, NoEscape, Itemize
 from pylatex.base_classes import Environment, CommandBase, Arguments
 from pylatex.utils import bold, escape_latex
 import time
+import re
 
 # General Overview:
 
@@ -279,19 +280,19 @@ def add_project():
         if project_name.lower() == "back":
             adjust_projects()
             return
-        
-        description = input("Enter a brief description of the project: ")
-        start_date = input("Enter the start date of the project (YYYY-MM-DD): ")
-        end_date = input("Enter the end date of the project (YYYY-MM-DD): ")
+        start_month = input("Enter the month you started the project (MM): ")
+        start_year = input("Enter the year you started the project (YYYY): ")
+        end_month = input("Enter the month you ended the project (MM): ")
+        end_year = input("Enter the year you ended the project (YYYY): ")
         link1 = input("Enter the first link related to the project (or leave blank): ")
         link2 = input("Enter the second link related to the project (or leave blank): ")
         
-        if project_name.strip() == "" or description.strip() == "" or start_date.strip() == "" or end_date.strip() == "":
-            print("Invalid input. Project name, description, start date, and end date cannot be empty.")
-            continue
-        
-        start_date = pd.to_datetime(start_date, format='%Y-%m-%d', errors='coerce')
-        end_date = pd.to_datetime(end_date, format='%Y-%m-%d', errors='coerce')
+        print("Would you like to write the project description now, or have an AI help you generate it? (Type M for manual, A for AI): ")
+        method = input("Selection: ")
+        if method.upper() == "A":
+            description = project_description_writer()
+        elif method.upper() == "M":
+            description = input("Enter a brief description of the project: ")
         
         if project_name in pd.read_csv('Stored Info/projects_bank.csv')['project_name'].values:
             print(f"Project '{project_name}' already exists. Please enter a different project name.")
@@ -302,14 +303,125 @@ def add_project():
         new_row = pd.DataFrame(
             {'project_name': [project_name], 
              'description': [description], 
-             'start_date': [start_date], 
-             'end_date': [end_date], 
+             'start_month': [start_month],
+             'start_year': [start_year],
+             'end_month': [end_month],
+             'end_year': [end_year],
              'link1': [link1], 
              'link2': [link2]})
         
         projects_df = pd.concat([projects_df, new_row], ignore_index=True)
         projects_df.to_csv('Stored Info/projects_bank.csv', index=False)
         print(f"Project '{project_name}' added successfully.\n")
+
+def project_description_writer():
+    print("Loading assistant...")
+    generate_description_prompt = """
+    
+    You are an expert career coach. A client has provided you with a brief description of their responsibilities and achievements on a previous project.
+    Based off of this description, help them streamline it into a brief and effective project description that highlights their key contributions and accomplishments.
+    Make sure to use action verbs and quantify achievements where possible, and not make it too long or overbearing.
+    
+    Brief Description: {user_description}
+    
+    Make sure to only respond with the description of the project. Do not include any extra text or formatting. The system will not be able to parse your response if you do.
+    
+    """
+    refine_description_prompt = """
+    
+    You are an expert career coach. A client has provided you with a brief description of their responsibilities and achievements on a previous project.
+    In your previous correspondence with the client, you generated the following project description based off of their description of the project: {original_description}
+    
+    The client has now provided the following feedback based off of the description you generated: {user_feedback}
+    
+    The client's initial description of the project is as follows: {description_short}
+    
+    Please refine and improve the original project description based off of the client's feedback, ensuring that it effectively highlights the client's key contributions and accomplishments on the project.
+    
+    Make sure to only respond with the description of the project. Do not include any extra text or formatting. The system will not be able to parse your response if you do.
+    
+    """
+    showReasoning = False
+    print("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N")
+    while True:
+        selection = input("Selection: ")
+        if selection == "Y":
+            showReasoning = True
+            break
+        elif selection == "N":
+            print("Thinking...")
+            break
+        print("Invalid selection, please type Y or N")
+    
+    
+    t1 = time.time()
+    generative_model = ChatOllama(model="deepseek-r1", streaming=True, reasoning=True)
+    print(f"Model init took: {time.time() - t1:.2f}s")
+    
+    t2 = time.time()
+    prompt = ChatPromptTemplate.from_template(generate_description_prompt)
+    chain = prompt | generative_model
+    print(f"Chain creation took: {time.time() - t2:.2f}s")
+    
+    user_desc = input("Please write a bit about the project you did, focusing on your responsibilities, difficulties you overcame, and achievements. The AI will take this answer and help streamline it.\n>>> ")
+    
+    inputs = {"user_description": user_desc}
+    
+    print("Waiting for first token...")
+    t3 = time.time()
+    
+    print("Initializing Response (May take a bit to get started)...\n")
+    first_token_received = False
+    
+    summary_text = ""
+    
+    for chunk in chain.stream(inputs):
+        if not first_token_received:
+            print(f"First token received after: {time.time() - t3:.2f}s")
+            first_token_received = True
+        # Check for reasoning (thinking) tokens
+        # These are usually in additional_kwargs when reasoning=True
+        reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+        if reasoning and showReasoning:
+            print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+        
+        # Check for the actual answer tokens
+        content = chunk.content
+        if content:
+            print(content, end="", flush=True)
+            summary_text += content
+    
+    followup_prompt = ChatPromptTemplate.from_template(refine_description_prompt)
+    followup_chain = followup_prompt | generative_model
+    
+    while True: # fix formatting here, we want it to match previous messages
+        user_input = input("\nAsk a followup question (or type 'exit' to quit) >>> ").strip()
+        
+        if user_input.lower() in ['exit', 'quit', 'q', '']:
+            print("Finalizing bullet points...")
+            break
+        
+        followup_inputs = {
+            "user_feedback": user_input,
+            "original_description": summary_text,
+            "description_short": user_desc
+        }
+        
+        summary_text = ""
+        
+        for chunk in followup_chain.stream(followup_inputs):
+            # Check for reasoning (thinking) tokens
+            reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+            if reasoning and showReasoning:
+                print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+            
+            # Check for the actual answer tokens
+            content = chunk.content
+            if content:
+                print(content, end="", flush=True)
+                summary_text += content
+    
+    return summary_text.strip()
 
 def remove_project():
     while True:
@@ -339,20 +451,20 @@ def edit_project():
             return
         
         if project_to_edit in projects_df['project_name'].values:
-            description = input("Enter a brief new description of the project: ")
-            start_date = input("Enter the new start date of the project (YYYY-MM-DD): ")
-            end_date = input("Enter the new end date of the project (YYYY-MM-DD): ")
+            print("Would you like to write the project description now, or have an AI help you generate it? (Type M for manual, A for AI): ")
+            method = input("Selection: ")
+            if method.upper() == "A":
+                description = project_description_writer()
+            elif method.upper() == "M":
+                description = input("Enter a brief description of the project: ")
+            start_month = input("Enter the new month you started the project (MM): ")
+            start_year = input("Enter the new year you started the project (YYYY): ")
+            end_month = input("Enter the new month you ended the project (MM): ")
+            end_year = input("Enter the new year you ended the project (YYYY): ")
             link1 = input("Enter the new first link related to the project (or leave blank): ")
             link2 = input("Enter the new second link related to the project (or leave blank): ")
             
-            if description.strip() == "" or start_date.strip() == "" or end_date.strip() == "":
-                print("Invalid input. Description, start date, and end date cannot be empty.")
-                continue
-            
-            start_date = pd.to_datetime(start_date, format='%Y-%m-%d', errors='coerce')
-            end_date = pd.to_datetime(end_date, format='%Y-%m-%d', errors='coerce')
-            
-            projects_df.loc[projects_df['project_name'] == project_to_edit, ['description', 'start_date', 'end_date', 'link1', 'link2']] = [description, start_date, end_date, link1, link2]
+            projects_df.loc[projects_df['project_name'] == project_to_edit, ['description', 'start_month', 'start_year', 'end_month', 'end_year', 'link1', 'link2']] = [description, start_month, start_year, end_month, end_year, link1, link2]
             projects_df.to_csv('Stored Info/projects_bank.csv', index=False)
             print(f"Project '{project_to_edit}' updated successfully.")
         else:
@@ -394,156 +506,25 @@ def add_work_experience():
         end_year = input("Enter the year you ended working in this position (YYYY): ")
         end_month = input("Enter the month you ended working in this position (MM): ")
         
-        long_short = input("Would you like to input a shorter description, or a longer one? (Type S for short, L for long): ")
-        if long_short.upper() == "S":
-            description_short = input("Enter a brief description of your responsibilities and achievements: ")
-            bullet1_long = ""
-            bullet2_long = ""
-            bullet3_long = ""
+        long_short, description_short, bullet1_long, bullet2_long, bullet3_long = work_experience_description_writer()
         
-        elif long_short.upper() == "L":
-            description_short = ""
-            method = input("You will now input three bullet points that describe your responsibilities and achievements. Would you like to input the bullet points yourself, or have an AI help you generate them? (Type M for manual, A for AI): ")
-            
-            if method.upper() == "A":
-                print("Loading assistant...")
-                generate_bullets_prompt = """
-                
-                You are an expert career coach. A client has provided you with a brief description of their responsibilities and achievements at a previous job.
-                Based off of this description, generate three concise bullet points that effectively highlight their key contributions and accomplishments in that role.
-                Make sure to use action verbs and quantify achievements where possible.
-                
-                Brief Description: {description_short}
-                
-                Make sure to respond in the following format. If you do not respond in this exact format, the program will not be able to parse your response:
-                
-                Bullet Point 1: ...
-                Bullet Point 2: ...
-                Bullet Point 3: ...
-                
-                """
-
-                refine_bullets_prompt = """
-                
-                You are an expert career coach. A client has provided you with a brief description of their responsibilities and achievements at a previous job.
-                In your previous correspondence with the client, you generated three bullet points based off of this description that best highlight their key contributions and accomplishments in that role.
-                
-                The client has now provided the following feedback based off of the bullet points you generated: {user_feedback}
-                
-                Your original bullet points are as follows: {original_bullets}
-                
-                The client's initial description of the job is as follows: {description_short}
-                
-                Please refine and improve the original bullet points based off of the client's feedback, ensuring that they effectively highlight the client's key contributions and accomplishments in that role.
-                
-                Make sure to respond in the following format. If you do not respond in this exact format, the program will not be able to parse your response:
-                
-                Bullet Point 1: ...
-                Bullet Point 2: ...
-                Bullet Point 3: ...
-                
-                """
-
-                showReasoning = False
-
-                print("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N")
-                while True:
-                    selection = input("Selection: ")
-                    if selection == "Y":
-                        showReasoning = True
-                        break
-                    elif selection == "N":
-                        print("Thinking...")
-                        break
-                    print("Invalid selection, please type Y or N")
-                
-                
-                t1 = time.time()
-                generative_model = ChatOllama(model="deepseek-r1", streaming=True, reasoning=True)
-                print(f"Model init took: {time.time() - t1:.2f}s")
-                
-                t2 = time.time()
-                prompt = ChatPromptTemplate.from_template(generate_bullets_prompt)
-                chain = prompt | generative_model
-                print(f"Chain creation took: {time.time() - t2:.2f}s")
-                
-                user_desc = input("Please write a bit about the job you did, focusing on your responsibilities and achievements. The AI will take this answer and help streamline it.")
-                
-                inputs = {"description_short": user_desc}
-                
-                print("Waiting for first token...")
-                t3 = time.time()
-                
-                print("Initializing Response (May take a bit to get started)...\n")
-                first_token_received = False
-                
-                summary_text = ""
-                
-                for chunk in chain.stream(inputs):
-                    if not first_token_received:
-                        print(f"First token received after: {time.time() - t3:.2f}s")
-                        first_token_received = True
-
-                    # Check for reasoning (thinking) tokens
-                    # These are usually in additional_kwargs when reasoning=True
-                    reasoning = chunk.additional_kwargs.get("reasoning_content", "")
-                    if reasoning and showReasoning:
-                        print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
-                    
-                    # Check for the actual answer tokens
-                    content = chunk.content
-                    if content:
-                        print(content, end="", flush=True)
-                        summary_text += content
-                
-                followup_prompt = ChatPromptTemplate.from_template(refine_bullets_prompt)
-                followup_chain = followup_prompt | generative_model
-                
-                while True: # fix formatting here, we want it to match previous messages
-                    user_input = input("\nAsk a followup question (or type 'exit' to quit) >>> ").strip()
-                    
-                    if user_input.lower() in ['exit', 'quit', 'q', '']:
-                        print("Exiting followup mode. Goodbye!")
-                        break
-                    
-                    followup_inputs = {
-                        "user_feedback": user_input,
-                        "original_bullets": summary_text,
-                        "description_short": user_desc
-                    }
-                    
-                    for chunk in followup_chain.stream(followup_inputs):
-                        # Check for reasoning (thinking) tokens
-                        reasoning = chunk.additional_kwargs.get("reasoning_content", "")
-                        if reasoning and showReasoning:
-                            print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
-                        
-                        # Check for the actual answer tokens
-                        content = chunk.content
-                        if content:
-                            print(content, end="", flush=True)
-                
-            elif method.upper() == "M":
-                bullet1_long = input("Give a quick description of your responsibilities and achievements (1/3): ")
-                bullet2_long = input("Give a quick description of your responsibilities and achievements (2/3): ")
-                bullet3_long = input("Give a quick description of your responsibilities and achievements (3/3): ")
+        long_short_mapping = {'S': False, 'L': True}
         
-        
-        if company.strip() == "" or role.strip() == "" or start_date.strip() == "" or end_date.strip() == "" or description.strip() == "":
-            print("Invalid input. None of the fields can be empty.")
-            continue
-        
-        start_date = pd.to_datetime(start_date, format='%Y-%m-%d', errors='coerce')
-        end_date = pd.to_datetime(end_date, format='%Y-%m-%d', errors='coerce')
         
         work_experience_df = pd.read_csv('Stored Info/work_experience_bank.csv')
         
         new_row = pd.DataFrame(
             {'company': [company], 
              'role': [role], 
-             'start_date': [start_date], 
-             'end_date': [end_date], 
-             'description': [description]})
+             'start_month': [start_month],
+             'start_year': [start_year],
+             'end_month': [end_month],
+             'end_year': [end_year],
+             'long_short': [long_short_mapping[long_short.upper()]],
+             'description_short': [description_short],
+             'bullet1_long': [bullet1_long],
+             'bullet2_long': [bullet2_long],
+             'bullet3_long': [bullet3_long]})
         
         work_experience_df = pd.concat([work_experience_df, new_row], ignore_index=True)
         work_experience_df.to_csv('Stored Info/work_experience_bank.csv', index=False)
@@ -577,6 +558,168 @@ def remove_work_experience():
         else:
             print(f"No work experiences found at '{company_to_remove}'.")
 
+def work_experience_description_writer():
+    long_short = input("Would you like to input a shorter description, or a longer one? (Type S for short, L for long): ")
+    if long_short.upper() == "S":
+        description_short = input("Enter a brief description of your responsibilities and achievements: ")
+        bullet1_long = ""
+        bullet2_long = ""
+        bullet3_long = ""
+    
+    elif long_short.upper() == "L":
+        description_short = ""
+        method = input("You will now input three bullet points that describe your responsibilities and achievements. Would you like to input the bullet points yourself, or have an AI help you generate them? (Type M for manual, A for AI): ")
+        
+        if method.upper() == "A":
+            print("Loading assistant...")
+            generate_bullets_prompt = """
+            
+            You are an expert career coach. A client has provided you with a brief description of their responsibilities and achievements at a previous job.
+            Based off of this description, generate three concise bullet points that effectively highlight their key contributions and accomplishments in that role.
+            Make sure to use action verbs and quantify achievements where possible.
+            
+            Brief Description: {description_short}
+            
+            Make sure to respond in the following format. If you do not respond in this exact format, the program will not be able to parse your response:
+            
+            Bullet Point 1: ...
+            Bullet Point 2: ...
+            Bullet Point 3: ...
+            
+            """
+            refine_bullets_prompt = """
+            
+            You are an expert career coach. A client has provided you with a brief description of their responsibilities and achievements at a previous job.
+            In your previous correspondence with the client, you generated three bullet points based off of this description that best highlight their key contributions and accomplishments in that role.
+            
+            The client has now provided the following feedback based off of the bullet points you generated: {user_feedback}
+            
+            Your original bullet points are as follows: {original_bullets}
+            
+            The client's initial description of the job is as follows: {description_short}
+            
+            Please refine and improve the original bullet points based off of the client's feedback, ensuring that they effectively highlight the client's key contributions and accomplishments in that role.
+            
+            Make sure to respond in the following format, not deviating from it at all. No bolding, or extra parts to your response. If you do not respond in this exact format, the program will not be able to parse your response:
+            
+            Bullet Point 1: ...
+            Bullet Point 2: ...
+            Bullet Point 3: ...
+            
+            """
+            showReasoning = False
+            print("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N")
+            while True:
+                selection = input("Selection: ")
+                if selection == "Y":
+                    showReasoning = True
+                    break
+                elif selection == "N":
+                    print("Thinking...")
+                    break
+                print("Invalid selection, please type Y or N")
+            
+            
+            t1 = time.time()
+            generative_model = ChatOllama(model="deepseek-r1", streaming=True, reasoning=True)
+            print(f"Model init took: {time.time() - t1:.2f}s")
+            
+            t2 = time.time()
+            prompt = ChatPromptTemplate.from_template(generate_bullets_prompt)
+            chain = prompt | generative_model
+            print(f"Chain creation took: {time.time() - t2:.2f}s")
+            
+            user_desc = input("Please write a bit about the job you did, focusing on your responsibilities and achievements. The AI will take this answer and help streamline it.\n>>> ")
+            
+            inputs = {"description_short": user_desc}
+            
+            print("Waiting for first token...")
+            t3 = time.time()
+            
+            print("Initializing Response (May take a bit to get started)...\n")
+            first_token_received = False
+            
+            summary_text = ""
+            
+            for chunk in chain.stream(inputs):
+                if not first_token_received:
+                    print(f"First token received after: {time.time() - t3:.2f}s")
+                    first_token_received = True
+                # Check for reasoning (thinking) tokens
+                # These are usually in additional_kwargs when reasoning=True
+                reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+                if reasoning and showReasoning:
+                    print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+                
+                # Check for the actual answer tokens
+                content = chunk.content
+                if content:
+                    print(content, end="", flush=True)
+                    summary_text += content
+            
+            bullet_pattern = r"[\s\S]*?Bullet Point 1:\s*([^\n]*)\n[\s\S]*?Bullet Point 2:\s*([^\n]*)\n[\s\S]*?Bullet Point 3:\s*([^\n]*)[\s\S]*"
+            
+            match = re.search(bullet_pattern, summary_text, re.DOTALL)
+            if match:
+                bp1, bp2, bp3 = match.groups()
+            else:
+                print("Error: Unable to parse bullet points from the model's response. Going to restart process now. Please try again.")
+                return work_experience_description_writer()
+            
+            summary_text = f"Bullet Point 1: {bp1.strip()}\nBullet Point 2: {bp2.strip()}\nBullet Point 3: {bp3.strip()}" # this whole thing is to combat hallucinations
+            
+            followup_prompt = ChatPromptTemplate.from_template(refine_bullets_prompt)
+            followup_chain = followup_prompt | generative_model
+            
+            while True: # fix formatting here, we want it to match previous messages
+                user_input = input("\nAsk a followup question (or type 'exit' to quit) >>> ").strip()
+                
+                if user_input.lower() in ['exit', 'quit', 'q', '']:
+                    print("Finalizing bullet points...")
+                    break
+                
+                followup_inputs = {
+                    "user_feedback": user_input,
+                    "original_bullets": summary_text,
+                    "description_short": user_desc
+                }
+                
+                summary_text = ""
+                
+                for chunk in followup_chain.stream(followup_inputs):
+                    # Check for reasoning (thinking) tokens
+                    reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+                    if reasoning and showReasoning:
+                        print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+                    
+                    # Check for the actual answer tokens
+                    content = chunk.content
+                    if content:
+                        print(content, end="", flush=True)
+                        summary_text += content
+                
+                bullet_pattern = r"[\s\S]*?Bullet Point 1:\s*([^\n]*)\n[\s\S]*?Bullet Point 2:\s*([^\n]*)\n[\s\S]*?Bullet Point 3:\s*([^\n]*)[\s\S]*"
+            
+                match = re.search(bullet_pattern, summary_text, re.DOTALL)
+                if match:
+                    bp1, bp2, bp3 = match.groups()
+                else:
+                    print("Error: Unable to parse bullet points from the model's response. Going to restart process now. Please try again.")
+                    continue
+                
+                summary_text = f"Bullet Point 1: {bp1.strip()}\nBullet Point 2: {bp2.strip()}\nBullet Point 3: {bp3.strip()}"
+            
+            bullet1_long = bp1.strip()
+            bullet2_long = bp2.strip()
+            bullet3_long = bp3.strip()
+            
+        elif method.upper() == "M":
+            bullet1_long = input("Give a quick description of your responsibilities and achievements (1/3): ")
+            bullet2_long = input("Give a quick description of your responsibilities and achievements (2/3): ")
+            bullet3_long = input("Give a quick description of your responsibilities and achievements (3/3): ")
+        
+    return long_short, description_short, bullet1_long, bullet2_long, bullet3_long
+
 def edit_work_experience():
     while True:
         work_experience_df = pd.read_csv('Stored Info/work_experience_bank.csv')
@@ -594,18 +737,17 @@ def edit_work_experience():
             chosen_role = input("Enter the role you want to edit: ")
             if chosen_role in all_roles_at_company['role'].values:
                 role = input("Enter your new role at the company: ")
-                start_date = input("Enter the new start date of the work experience (YYYY-MM-DD): ")
-                end_date = input("Enter the new end date of the work experience (YYYY-MM-DD): ")
-                description = input("Enter a brief new description of your responsibilities and achievements: ")
+                start_year = input("Enter the new year you started working in this position (YYYY): ")
+                start_month = input("Enter the new month you started working in this position (MM): ")
+                end_year = input("Enter the new year you ended working in this position (YYYY): ")
+                end_month = input("Enter the new month you ended working in this position (MM): ")
+                long_short, description_short, bullet1_long, bullet2_long, bullet3_long = work_experience_description_writer()
                 
-                if role.strip() == "" or start_date.strip() == "" or end_date.strip() == "" or description.strip() == "":
-                    print("Invalid input. None of the fields can be empty.")
-                    continue
+                long_short_mapping = {'S': False, 'L': True}
                 
-                start_date = pd.to_datetime(start_date, format='%Y-%m-%d', errors='coerce')
-                end_date = pd.to_datetime(end_date, format='%Y-%m-%d', errors='coerce')
-                
-                work_experience_df.loc[(work_experience_df['company'] == company_to_edit) & (work_experience_df['role'] == chosen_role), ['role', 'start_date', 'end_date', 'description']] = [role, start_date, end_date, description]
+                work_experience_df.loc[(work_experience_df['company'] == company_to_edit) & (work_experience_df['role'] == chosen_role), 
+                                       ['role', 'start_month', 'start_year', 'end_month', 'end_year', 'long_short', 'description_short', 'bullet1_long', 'bullet2_long', 'bullet3_long']] = [
+                                           role, start_month, start_year, end_month, end_year, long_short_mapping[long_short.upper()], description_short, bullet1_long, bullet2_long, bullet3_long]
                 work_experience_df.to_csv('Stored Info/work_experience_bank.csv', index=False)
                 print(f"Work experience as '{chosen_role}' at '{company_to_edit}' updated successfully.")
             else:
@@ -791,9 +933,173 @@ def custom_job_description():
         again = input("Selection: ")
         if again.lower() != 'y':
             return add_job()
-    
+
 def create_resume():
+    job_df = pd.read_csv('Stored Info/job_bank.csv')
+    if job_df.empty:
+        print("No jobs found in the job bank. Please add a job first.")
+        return analyze_job()
+    
+    print("\n"+"-"*30)
+    print("Here are the jobs currently stored in your job bank:")
+    print(job_df[['title', 'company', 'location']])
+    print("-" * 30 + "\n")
+
+    job_index = input(
+        "Enter the job index you would like to create a resume for "
+        "(or type back to return to analyze job menu): "
+    )
+
+    if job_index.lower() == "back":
+        return analyze_job()
+
+    try:
+        job_index = int(job_index)
+        selected_job = job_df.loc[job_index]
+    except (ValueError, KeyError):
+        print("Invalid job index.")
+        return create_resume()
+    
+    job_description = selected_job.iloc[0]['description']
+    
+    print(f"\nCreating resume for job: {selected_job.iloc[0]['title']} at {selected_job.iloc[0]['company']}\n")
+    
+    resume_outline = create_resume_ai(job_description)
+    
+    print("\n" + "-"*30)
+    print("Resume Outline Created:\n")
+    print(resume_outline)
+    print("-"*30 + "\n")
+    
+    return analyze_job()
+
+def create_resume_ai(job_description):
+    print("Loading assistant...")
+    generate_resume_prompt = """
+    
+    You are an expert career coach. A client has provided you with a job description for a position they are interested in applying for.
+    You have access to a large dataset of the client's skills, projects, coursework, and work experience.
+    
+    Based off of the job description, please analyze the client's datasets and determine which skills, projects, coursework, and work experience are most relevant to the job.
+    Your goal is to help the client create a tailored resume that highlights their most relevant qualifications for the job.
+    
+    Job Description: {job_description}
+    
+    The client's datasets are as follows:
+    
+    Coursework: {coursework}
+    Projects: {projects}
+    Skills: {skills}
+    Work Experience: {work_experience}
+    
+    The client would like you to select the most relevant items from each dataset to include in their resume. The resume is meant to be no longer than a single page, so please be selective in your choices.
+    
+    Make sure to include in your answer a python valid dictionary, where the keys are the sections of the resume, and the values are a list of the indices of the items from the datasets that you think should correspond to the dataset.
+    This dictionary is essential to be included in the proper format, as the program will not function otherwise.
+    For example, if you think that you want to include skills 1, 3, and 5 from the skills dataset, and projects 2 and 4 from the projects dataset, your response should look like this:
+    
+    {{"skills": [1, 3, 5], "projects": [2, 4], "coursework": [...], "work_experience": [...]}}
+    
+    """
+    refine_resume_prompt = """
+    
+    
+  
+    """
+    showReasoning = False
+    print("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N")
+    while True:
+        selection = input("Selection: ")
+        if selection == "Y":
+            showReasoning = True
+            break
+        elif selection == "N":
+            print("Thinking...")
+            break
+        print("Invalid selection, please type Y or N")
+    
+    
+    t1 = time.time()
     generative_model = ChatOllama(model="deepseek-r1", streaming=True, reasoning=True)
+    print(f"Model init took: {time.time() - t1:.2f}s")
+    
+    t2 = time.time()
+    prompt = ChatPromptTemplate.from_template(generate_resume_prompt)
+    chain = prompt | generative_model
+    print(f"Chain creation took: {time.time() - t2:.2f}s")
+    
+    coursework = pd.read_csv('Stored Info/coursework_bank.csv').to_dict(orient='index')
+    projects = pd.read_csv('Stored Info/projects_bank.csv').to_dict(orient='index')
+    skills = pd.read_csv('Stored Info/skills_bank.csv').to_dict(orient='index')
+    work_experience = pd.read_csv('Stored Info/work_experience_bank.csv').to_dict(orient='index')
+    
+    print("AAAA")
+    print(work_experience)
+    print("AAAA")
+    
+    inputs = {"coursework": coursework, "projects": projects, "skills": skills, "work_experience": work_experience, "job_description": job_description}
+    
+    print("Waiting for first token...")
+    t3 = time.time()
+    
+    print("Initializing Response (May take a bit to get started)...\n")
+    first_token_received = False
+    
+    summary_text = ""
+    
+    for chunk in chain.stream(inputs):
+        if not first_token_received:
+            print(f"First token received after: {time.time() - t3:.2f}s")
+            first_token_received = True
+        # Check for reasoning (thinking) tokens
+        # These are usually in additional_kwargs when reasoning=True
+        reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+        if reasoning and showReasoning:
+            print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+        
+        # Check for the actual answer tokens
+        content = chunk.content
+        if content:
+            print(content, end="", flush=True)
+            summary_text += content
+    
+    followup_prompt = ChatPromptTemplate.from_template(refine_resume_prompt)
+    followup_chain = followup_prompt | generative_model
+    
+    while True: # fix formatting here, we want it to match previous messages
+        user_input = input("\nAsk a followup question (or type 'exit' to quit) >>> ").strip()
+        
+        if user_input.lower() in ['exit', 'quit', 'q', '']:
+            print("Finalizing bullet points...")
+            break
+        
+        followup_inputs = {
+            "user_feedback": user_input,
+            "original_resume_outline": summary_text,
+            "coursework": coursework, 
+            "projects": projects, 
+            "skills": skills, 
+            "work_experience": work_experience, 
+            "job_description": job_description
+        }
+        
+        summary_text = ""
+        
+        for chunk in followup_chain.stream(followup_inputs):
+            # Check for reasoning (thinking) tokens
+            reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+            if reasoning and showReasoning:
+                print(f"\033[90m{reasoning}\033[0m", end="", flush=True)
+            
+            # Check for the actual answer tokens
+            content = chunk.content
+            if content:
+                print(content, end="", flush=True)
+                summary_text += content
+    
+    return summary_text.strip()
+    
+    
     
     # General idea is to have a latex template for a resume, where each project, skill, course and work experience is a snippet
     # that gets filled in based on the user's data and the job description. The AI will rank the user's data based on relevance to the job,
@@ -847,7 +1153,7 @@ def init_check(): # check to make sure all necessary folders and files are made
             "start_year", 
             "end_month", 
             "end_year", 
-            "long_short", 
+            "long_short", # True for long description, False for short
             "description_short", 
             "bullet1_long", 
             "bullet2_long", 
@@ -1085,7 +1391,7 @@ class ProjectEntry(Environment):
     def __init__(self):
         super().__init__(arguments=Arguments(NoEscape(r'\linewidth'), NoEscape('@{}l r@{}')))
 
-def create_resume(work_experience, projects, skills, coursework, education):
+def create_resume_latex(work_experience, projects, skills, coursework, education):
     """
     Format:
     
