@@ -1,6 +1,6 @@
 import pandas as pd
 import cli_util as cutil
-
+from cli_util import CommonConstraints as cc
 def adjust_coursework(adjust_user_info):
     valid = {
         '1': {"desc": "View Coursework", "func": view_coursework}, 
@@ -22,17 +22,17 @@ def view_coursework():
 
 def add_coursework():
     while True:
-        course_id = input("Enter the course ID (Type back to return to adjusting coursework menu): ")
+        course_id = cutil.input_str(prompt="Enter the course ID (Type back to return to adjusting coursework menu): ", constraint=cc.non_empty_string, error_msg="Course ID cannot be empty.")
         if course_id.lower() == "back":
             adjust_coursework()
             return
-        
-        course_name = input("Enter the course name: ")
-        institution = input("Enter the institution: ")
-        year = input("Enter the year: ")
-        semester = input("Enter the semester (F for fall, S for spring, W for winter, SU for summer, O for other): ")
-        grade = input("Enter the grade you recieved for this course: ")
-        description = input("Enter a brief description of the course: ")
+
+        course_name = cutil.input_str(prompt="Enter the course name: ", constraint=cc.non_empty_string, error_msg="Course name cannot be empty.")
+        institution = cutil.input_str(prompt="Enter the institution: ", constraint=cc.non_empty_string, error_msg="Institution cannot be empty.")
+        year = cutil.input_str(prompt="Enter the year: ", constraint=cc.non_empty_string, error_msg="Year cannot be empty.")
+        semester = cutil.input_str(prompt="Enter the semester (F for fall, S for spring, W for winter, SU for summer, O for other): ", constraint=cc.non_empty_string, error_msg="Semester cannot be empty.")
+        grade = cutil.input_str(prompt="Enter the grade you recieved for this course: ", constraint=cc.non_empty_string, error_msg="Grade cannot be empty.")
+        description = cutil.input_str(prompt="Enter a brief description of the course: ", constraint=cc.non_empty_string, error_msg="Description cannot be empty.")
         
         if course_id.strip() == "" or course_name.strip() == "" or institution.strip() == "" or year.strip() == "" or grade.strip() == "" or description.strip() == "":
             print("Invalid input. None of the fields can be empty.")
@@ -90,24 +90,14 @@ def edit_coursework():
             return
         
         if course_to_edit in coursework_df['course_id'].values:
-            course_name = input("Enter the new course name: ")
-            institution = input("Enter the new institution: ")
-            year = input("Enter the new year: ")
-            semester = input("Enter the new semester (F for fall, S for spring, W for winter, SU for summer, O for other): ")
-            grade = input("Enter the new grade you recieved for this course: ")
-            description = input("Enter a brief new description of the course: ")
+            course_name = cutil.input_str(prompt="Enter the new course name: ", constraint=cc.non_empty_string, error_msg="Course name cannot be empty.")
+            institution = cutil.input_str(prompt="Enter the new institution: ", constraint=cc.non_empty_string, error_msg="Institution cannot be empty.")
+            year = cutil.input_str(prompt="Enter the new year: ", constraint=cc.non_empty_string, error_msg="Year cannot be empty.")
+            semester = cutil.input_str(prompt="Enter the new semester (F for fall, S for spring, W for winter, SU for summer, O for other): ", constraint=cc.is_in_set({'F', 'S', 'W', 'SU', 'O'}), error_msg="Semester cannot be empty.")
+            grade = cutil.input_str(prompt="Enter the new grade you recieved for this course: ", constraint=cc.non_empty_string, error_msg="Grade cannot be empty.")
+            description = cutil.input_str(prompt="Enter a brief new description of the course: ", constraint=cc.non_empty_string, error_msg="Description cannot be empty.")
             
-            if course_name.strip() == "" or institution.strip() == "" or year.strip() == "" or grade.strip() == "" or description.strip() == "":
-                print("Invalid input. None of the fields can be empty.")
-                continue
-            
-            if semester not in {'F', 'S', 'W', 'SU', 'O'}:
-                print("Invalid input. Semester must be one of the following: F, S, W, SU, O.")
-                continue
-            
-            semester = semester.upper()
-            
-            coursework_df.loc[coursework_df['course_id'] == course_to_edit, ['course_name', 'institution', 'year', 'grade', 'description']] = [course_name, institution, year, grade, description]
+            coursework_df.loc[coursework_df['course_id'] == course_to_edit, ['course_name', 'institution', 'year', 'grade', 'description', 'semester']] = [course_name, institution, year, grade, description, semester ]
             coursework_df.to_csv('Stored Info/coursework_bank.csv', index=False)
             print(f"Course '{course_to_edit}' updated successfully.")
         else:

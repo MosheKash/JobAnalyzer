@@ -1,5 +1,6 @@
 import pandas as pd
 import cli_util as cutil
+from cli_util import CommonConstraints as cc
 
 def adjust_skills(adjust_user_info):
     valid = {
@@ -27,7 +28,7 @@ def add_skill():
             adjust_skills()
             return
         
-        level = input("Enter the level of proficiency as an integer from 1-10, 1 being Beginner to 10 being Master: ")
+        level = cutil.input_int(prompt="Enter the level of proficiency as an integer from 1-10, 1 being Beginner to 10 being Master: ", constraint=cc.within_range(1,10), error_msg="Please enter an integer between 1 and 10 for the skill level.")
         
         new_row = pd.DataFrame({'skill_name': [skill_name], 'level': [int(level)]})
         
@@ -73,11 +74,7 @@ def edit_skill():
             return
         
         if skill_to_edit in skills_df['skill_name'].values:
-            new_level = input(f"Enter the new level for '{skill_to_edit}' as an integer from 1-10: ")
-            if not new_level.isdigit() or not (1 <= int(new_level) <= 10):
-                print("Invalid input. Level must be an integer between 1 and 10.")
-                continue
-            
+            new_level = cutil.input_int(prompt=f"Enter the new level for '{skill_to_edit}' as an integer from 1-10: ", constraint=cc.within_range(1,10), error_msg="Please enter an integer between 1 and 10 for the skill level.")
             skills_df.loc[skills_df['skill_name'] == skill_to_edit, 'level'] = int(new_level)
             skills_df.to_csv('Stored Info/skills_bank.csv', index=False)
             print(f"Skill '{skill_to_edit}' updated successfully.")

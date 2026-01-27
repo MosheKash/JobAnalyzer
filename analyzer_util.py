@@ -3,6 +3,8 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
+import cli_util as cutil
+from cli_util import CommonConstraints as cc
 
 def init_check(): # check to make sure all necessary folders and files are made
     print("------------------------")
@@ -130,15 +132,18 @@ def init_check(): # check to make sure all necessary folders and files are made
                         f"   !!! The file may be corrupted !!!\n"
                     )
 
-                    print("How would you like to proceed?")
-                    print("1. Load from backup")
-                    print("2. Remake file")
-                    print("3. Proceed without doing anything (not advisable)\n")
-                    while True:
-                        result = input("Selection: ")
-                        if result in {'1', '2', '3'}:
-                            break
-                        print("Invalid input. Please type 1 to load from a backup, 2 to remake the file, or 3 to proceed without doing anything")
+                        
+                    prompt = """How would you like to proceed?
+1. Load from backup
+2. Remake file
+3. Proceed without doing anything (not advisable)
+Selection: """
+
+                    valid = {'1': {'desc': 'Load from backup', 'func': cutil.return_self_dummy, 'args': ['1']},
+                                 '2': {'desc': 'Remake file', 'func': cutil.return_self_dummy, 'args': ['2']},
+                                 '3': {'desc': 'Proceed without doing anything', 'func': cutil.return_self_dummy, 'args': ['3']}}
+
+                    result = cutil.input_choice(prompt, valid, "Please type 1 to load from a backup, 2 to remake the file, or 3 to proceed without doing anything")
 
                     if result == '1':
                         load_backup(item_path)
@@ -174,11 +179,15 @@ def init_check(): # check to make sure all necessary folders and files are made
                     print("1. Load from backup")
                     print("2. Remake file")
                     print("3. Proceed without doing anything (not advisable)\n")
-                    while True:
-                        result = input("Selection: ")
-                        if result in {'1', '2', '3'}:
-                            break
-                        print("Invalid input. Please type 1 to load from a backup, 2 to remake the file, or 3 to proceed without doing anything")
+                    prompt = """How would you like to proceed?
+1. Load from backup
+2. Remake file
+3. Proceed without doing anything (not advisable)
+Selection: """
+                    valid = {'1': {'desc': 'Load from backup', 'func': cutil.return_self_dummy, 'args': ['1']},
+                                 '2': {'desc': 'Remake file', 'func': cutil.return_self_dummy, 'args': ['2']},
+                                 '3': {'desc': 'Proceed without doing anything', 'func': cutil.return_self_dummy, 'args': ['3']}}
+                    result = cutil.input_choice(prompt, valid, "Please type 1 to load from a backup, 2 to remake the file, or 3 to proceed without doing anything")
 
                     if result == '1':
                         load_backup(item_path)

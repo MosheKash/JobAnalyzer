@@ -4,6 +4,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 import re
 import cli_util as cutil
+from cli_util import CommonConstraints as cc
 
 def adjust_work_experience(adjust_user_info):
     valid = {
@@ -32,10 +33,10 @@ def add_work_experience():
             return
         
         role = input("Enter your role at the company: ")
-        start_year = input("Enter the year you started working in this position (YYYY): ")
-        start_month = input("Enter the month you started working in this position (MM): ")
-        end_year = input("Enter the year you ended working in this position (YYYY): ")
-        end_month = input("Enter the month you ended working in this position (MM): ")
+        start_year = cutil.input_int(prompt="Enter the year you started working in this position (YYYY): ", constraint=cc.within_range(1900,2100), error_msg="Please enter a valid four-digit year (1900-2100).")
+        start_month = cutil.input_int(prompt="Enter the month you started working in this position (MM): ", constraint=cc.within_range(1,12), error_msg="Please enter a valid month (01-12).")
+        end_year = cutil.input_int(prompt="Enter the year you ended working in this position (YYYY): ", constraint=cc.within_range(1900,2100), error_msg="Please enter a valid four-digit year (1900-2100).")
+        end_month = cutil.input_int(prompt="Enter the month you ended working in this position (MM): ", constraint=cc.within_range(1,12), error_msg="Please enter a valid month (01-12).")
         
         long_short, description_short, bullet1_long, bullet2_long, bullet3_long = work_experience_description_writer()
         
@@ -90,7 +91,7 @@ def remove_work_experience():
             print(f"No work experiences found at '{company_to_remove}'.")
 
 def work_experience_description_writer():
-    long_short = input("Would you like to input a shorter description, or a longer one? (Type S for short, L for long): ")
+    long_short = cutil.input_str(prompt="Would you like to input a shorter description, or a longer one? (Type S for short, L for long): ", constraint=cc.is_in_set({'S','L'}), error_msg="Please type S for short description or L for long description.")
     if long_short.upper() == "S":
         description_short = input("Enter a brief description of your responsibilities and achievements: ")
         bullet1_long = ""
@@ -99,7 +100,7 @@ def work_experience_description_writer():
     
     elif long_short.upper() == "L":
         description_short = ""
-        method = input("You will now input three bullet points that describe your responsibilities and achievements. Would you like to input the bullet points yourself, or have an AI help you generate them? (Type M for manual, A for AI): ")
+        method = cutil.input_yes_no(prompt="You will now input three bullet points that describe your responsibilities and achievements. Would you like to have AI help you generate them? (y/n): ")
         
         if method.upper() == "A":
             print("Loading assistant...")
@@ -139,16 +140,11 @@ def work_experience_description_writer():
             
             """
             showReasoning = False
-            print("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N")
-            while True:
-                selection = input("Selection: ")
-                if selection == "Y":
-                    showReasoning = True
-                    break
-                elif selection == "N":
-                    print("Thinking...")
-                    break
-                print("Invalid selection, please type Y or N")
+            selection = cutil.input_yes_no("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? (y/n):")
+            if selection:
+                showReasoning = True
+            else:
+                print("Thinking...\n")
             
             
             t1 = time.time()
@@ -268,10 +264,10 @@ def edit_work_experience():
             chosen_role = input("Enter the role you want to edit: ")
             if chosen_role in all_roles_at_company['role'].values:
                 role = input("Enter your new role at the company: ")
-                start_year = input("Enter the new year you started working in this position (YYYY): ")
-                start_month = input("Enter the new month you started working in this position (MM): ")
-                end_year = input("Enter the new year you ended working in this position (YYYY): ")
-                end_month = input("Enter the new month you ended working in this position (MM): ")
+                start_year = cutil.input_int(prompt="Enter the new year you started working in this position (YYYY): ", constraint=cc.within_range(1900,2100), error_msg="Please enter a valid four-digit year (1900-2100).")
+                start_month = cutil.input_int(prompt="Enter the new month you started working in this position (MM): ", constraint=cc.within_range(1,12), error_msg="Please enter a valid month (01-12).")
+                end_year = cutil.input_int(prompt="Enter the new year you ended working in this position (YYYY): ", constraint=cc.within_range(1900,2100), error_msg="Please enter a valid four-digit year (1900-2100).")
+                end_month = cutil.input_int(prompt="Enter the new month you ended working in this position (MM): ", constraint=cc.within_range(1,12), error_msg="Please enter a valid month (01-12).")
                 long_short, description_short, bullet1_long, bullet2_long, bullet3_long = work_experience_description_writer()
                 
                 long_short_mapping = {'S': False, 'L': True}

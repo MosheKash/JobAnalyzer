@@ -3,6 +3,7 @@ import time
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 import cli_util as cutil
+from cli_util import CommonConstraints as cc
 
 def adjust_projects(adjust_user_info):
     valid = {
@@ -29,18 +30,17 @@ def add_project():
         if project_name.lower() == "back":
             adjust_projects()
             return
-        start_month = input("Enter the month you started the project (MM): ")
-        start_year = input("Enter the year you started the project (YYYY): ")
-        end_month = input("Enter the month you ended the project (MM): ")
-        end_year = input("Enter the year you ended the project (YYYY): ")
+        start_month = cutil.input_int(prompt="Enter the month you started the project (MM): ", constraint=cc.within_range(1,12), error_msg="Please enter a valid month (01-12).")
+        start_year = cutil.input_int(prompt="Enter the year you started the project (YYYY): ", constraint=cc.within_range(1900,2100), error_msg="Please enter a valid four-digit year (1900-2100).")
+        end_month = cutil.input_int(prompt="Enter the month you ended the project (MM): ", constraint=cc.within_range(1,12), error_msg="Please enter a valid month (01-12).")
+        end_year = cutil.input_int(prompt="Enter the year you ended the project (YYYY): ", constraint=cc.within_range(1900,2100), error_msg="Please enter a valid four-digit year (1900-2100).")
         link1 = input("Enter the first link related to the project (or leave blank): ")
         link2 = input("Enter the second link related to the project (or leave blank): ")
         
-        print("Would you like to write the project description now, or have an AI help you generate it? (Type M for manual, A for AI): ")
-        method = input("Selection: ")
-        if method.upper() == "A":
+        method = cutil.input_yes_no("Would you like to use AI to help generate the project description? (y/n): ")
+        if method:
             description = project_description_writer()
-        elif method.upper() == "M":
+        else:
             description = input("Enter a brief description of the project: ")
         
         if project_name in pd.read_csv('Stored Info/projects_bank.csv')['project_name'].values:
@@ -91,16 +91,11 @@ def project_description_writer():
     
     """
     showReasoning = False
-    print("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N")
-    while True:
-        selection = input("Selection: ")
-        if selection == "Y":
-            showReasoning = True
-            break
-        elif selection == "N":
-            print("Thinking...")
-            break
-        print("Invalid selection, please type Y or N")
+    selection = cutil.input_yes_no("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? (y/n):")
+    if selection:
+        showReasoning = True
+    else:
+        print("Thinking...\n")
     
     
     t1 = time.time()
@@ -200,16 +195,15 @@ def edit_project():
             return
         
         if project_to_edit in projects_df['project_name'].values:
-            print("Would you like to write the project description now, or have an AI help you generate it? (Type M for manual, A for AI): ")
-            method = input("Selection: ")
-            if method.upper() == "A":
+            method = cutil.input_yes_no("Would you like to use AI to help generate the project description? (y/n): ")
+            if method:
                 description = project_description_writer()
-            elif method.upper() == "M":
+            else:
                 description = input("Enter a brief description of the project: ")
-            start_month = input("Enter the new month you started the project (MM): ")
-            start_year = input("Enter the new year you started the project (YYYY): ")
-            end_month = input("Enter the new month you ended the project (MM): ")
-            end_year = input("Enter the new year you ended the project (YYYY): ")
+            start_month = cutil.input_int(prompt="Enter the new month you started the project (MM): ", constraint=cc.within_range(1,12), error_msg="Please enter a valid month (01-12).")
+            start_year = cutil.input_int(prompt="Enter the new year you started the project (YYYY): ", constraint=cc.within_range(1900,2100), error_msg="Please enter a valid four-digit year (1900-2100).")
+            end_month = cutil.input_int(prompt="Enter the new month you ended the project (MM): ", constraint=cc.within_range(1,12), error_msg="Please enter a valid month (01-12).")
+            end_year = cutil.input_int(prompt="Enter the new year you ended the project (YYYY): ", constraint=cc.within_range(1900,2100), error_msg="Please enter a valid four-digit year (1900-2100).")
             link1 = input("Enter the new first link related to the project (or leave blank): ")
             link2 = input("Enter the new second link related to the project (or leave blank): ")
             

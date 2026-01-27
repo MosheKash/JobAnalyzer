@@ -5,6 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from jobspy import scrape_jobs
 from datetime import date, datetime
 import cli_util as cutil
+from cli_util import CommonConstraints as cc
 
 def add_job(main_menu):
     valid = {
@@ -24,27 +25,10 @@ def job_scraper():
     while True:
         search_query = input("Enter the job title or keywords to search for: ")
         location = input("Enter the location for the job search (or leave blank for remote): ")
-        num_results = input("Enter the number of job listings to retrieve: ")
-        distance = input("Enter the maximum distance from the location in miles (or leave blank for no limit): ")
-        job_type = input("Enter the job type (fulltime, parttime, internship, contract) (or leave blank for any): ")
-        remote = input("Should the job be remote? (y/n) (or leave blank for any): ")
-        
-        if not num_results.isdigit() or int(num_results) <= 0:
-            print("Invalid input. Please enter a positive integer for the number of job listings.")
-            continue
-        
-        if distance.strip() != "" and (not distance.isdigit() or int(distance) < 0):
-            print("Invalid input. Please enter a non-negative integer for the distance.")
-            continue
-        
-        if remote.lower() not in {'y', 'n', ''}:
-            print("Invalid input for remote. Please enter 'y' for yes, 'n' for no, or leave blank for any.")
-            continue
-        
-        
-        if job_type.strip() != "" and job_type.lower() not in {'fulltime', 'parttime', 'internship', 'contract'}:
-            print("Invalid input for job type. Please enter 'fulltime', 'parttime', 'internship', 'contract', or leave blank for any.")
-            continue
+        num_results = cutil.input_int(prompt="Enter the number of job listings to retrieve: ", constraint=cc.positive_integer, error_msg="Please enter a positive integer for the number of job listings.")
+        distance = cutil.input_int(prompt="Enter the maximum distance from the location in miles (or leave blank for no limit): ", constraint=cc.non_negative_integer, error_msg="Please enter a non-negative integer or leave blank for no limit.", empty_allowed=True)
+        job_type = cutil.input_str(prompt="Enter the job type (fulltime, parttime, internship, contract) (or leave blank for any): ", constraint=cc.is_in_set({'fulltime', 'parttime', 'internship', 'contract', ''}), error_msg="Please enter 'fulltime', 'parttime', 'internship', 'contract', or leave blank for any.")
+        remote = cutil.input_str(prompt="Should the job be remote? (y/n) (or leave blank for any): ", constraint=cc.is_in_set({'y', 'n', ''}), error_msg="Please enter 'y' for yes, 'n' for no, or leave blank for any.")
         
         print("\nSearching for jobs...\n")
         
@@ -114,8 +98,8 @@ def custom_job_description():
         description = input("Enter the job description: ")
         skills = input("Enter the required skills (comma separated): ")
         type_of_salary = input("Enter the type of salary (e.g., hourly, yearly): ")
-        min_salary = input("Enter the minimum salary amount: ")
-        max_salary = input("Enter the maximum salary amount: ")
+        min_salary = cutil.input_int(prompt="Enter the minimum salary amount: ", constraint=cc.non_negative_integer, error_msg="Please enter a non-negative salary or leave blank.", empty_allowed=True)
+        max_salary = cutil.input_int(prompt="Enter the maximum salary amount: ", constraint=cc.non_negative_integer, error_msg="Please enter a non-negative salary or leave blank.", empty_allowed=True)
         type_of_job = input("Enter the type of job (e.g., fulltime, parttime, internship, contract): ")
         
         id = "custom"+datetime.now().strftime("%Y%m%d%H%M%S")

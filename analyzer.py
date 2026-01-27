@@ -128,16 +128,15 @@ def create_resume_ai(job_description):
     """
     showReasoning = False
     print("The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N")
-    while True:
-        selection = input("Selection: ")
-        if selection == "Y":
-            showReasoning = True
-            break
-        elif selection == "N":
-            print("Thinking...")
-            break
-        print("Invalid selection, please type Y or N")
     
+    prompt = "The model will think for a bit to ensure a good answer. Would you like to show the thinking (May clog up terminal)? Y/N"
+    
+    selection = cutil.input_yes_no(prompt, error_msg="Please type Y for yes or N for no")
+    
+    if selection:
+        showReasoning = True
+    else:
+        print("Thinking...")
     
     t1 = time.time()
     generative_model = ChatOllama(model="deepseek-r1", streaming=True, reasoning=True)
